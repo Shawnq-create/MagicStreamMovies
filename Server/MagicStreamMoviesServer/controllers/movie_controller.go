@@ -1,3 +1,10 @@
+// Gin expects a handler of type `gin.HandlerFunc`, i.e. `func(*gin.Context)`.
+// By writing `func AddMovie() gin.HandlerFunc { return func(c *gin.Context){...} }`
+//We create a *factory function* that returns the actual request handler.
+//    - Outer function (AddMovie): used for setup or dependency injection
+//      (e.g., pass DB connection, config, etc.)
+//    - Inner anonymous func: the real handler that runs for each request.
+
 package controllers
 
 import (
@@ -8,11 +15,13 @@ import (
 	"github.com/Shawnq-create/MagicStreamMovies/Server/MagicStreamMoviesServer/database"
 	"github.com/Shawnq-create/MagicStreamMovies/Server/MagicStreamMoviesServer/models"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var movieCollection *mongo.Collection = database.OpenCollection("movies", database.Client)
+var validate = validator.New()
 
 func GetMovies() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -59,6 +68,34 @@ func GetMovie() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, movie)
+
+	}
+}
+
+func AddMovie() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Logic to add a new movie to the database will go here
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
+		defer cancel()
+
+		var movie models.Movie
+		if err := c.ShouldBindJSON(&movie); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+			return
+		}
+
+		if err := validate.Struct(movie); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		result, err := movieCollection.InsertOne(ctx, movie)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error inserting movie into database"})
+			return
+		}
+		c.JSON(http.StatusOK, result)
 
 	}
 }
